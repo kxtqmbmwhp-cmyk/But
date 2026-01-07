@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Advanced Crypto Paper Trading Bot
+Advanced Crypto Paper Trading Bot with AI Brain
 
 Features:
+- AI-powered market analysis using Claude API
 - Multiple trading strategies (MA, RSI, MACD, Bollinger, Stochastic, ADX)
 - Combined strategy with weighted voting
 - Multi-timeframe analysis
@@ -15,6 +16,7 @@ Usage:
     python bot.py              # Run in paper trading mode
     python bot.py --backtest   # Run backtest on historical data
     python bot.py --analyze    # Show performance analytics
+    python bot.py --chat       # Chat with AI about trading
 """
 
 import argparse
@@ -37,6 +39,7 @@ from notifications import get_notifier, AlertLevel
 from analytics import TradeJournal, TradeRecord, PerformanceAnalyzer, RealTimeStats
 from multi_timeframe import MultiTimeframeAnalyzer, get_mtf_signal
 from indicators import atr, calculate_all_indicators
+from ai_brain import AIBrain, AITradingAssistant, MarketSentiment
 
 # Configure logging
 logging.basicConfig(
@@ -61,9 +64,10 @@ def print_banner():
     """Print startup banner."""
     print("""
 ╔════════════════════════════════════════════════════════════════════╗
-║           ADVANCED CRYPTO PAPER TRADING BOT v2.0                   ║
+║        ADVANCED CRYPTO TRADING BOT v3.0 - AI POWERED               ║
 ║                                                                    ║
 ║  Features:                                                         ║
+║  - AI Brain (Claude) for intelligent analysis                     ║
 ║  - 6 Technical Indicators (MA, RSI, MACD, BB, Stoch, ADX)         ║
 ║  - Multi-Timeframe Analysis                                        ║
 ║  - Risk Management (SL/TP/Trailing)                               ║
@@ -129,6 +133,10 @@ def run_bot():
     journal = TradeJournal(config.TRADE_JOURNAL_PATH)
     stats = RealTimeStats()
 
+    # Initialize AI Brain
+    ai_brain = AIBrain() if config.ENABLE_AI else None
+    ai_assistant = AITradingAssistant() if config.ENABLE_AI else None
+
     # Multi-timeframe analyzer for MTF mode
     mtf_analyzer = None
     if config.STRATEGY_MODE == config.StrategyMode.MTF:
@@ -138,6 +146,7 @@ def run_bot():
     logger.info(f"Initial balance: ${config.INITIAL_BALANCE_USDT:,.2f}")
     logger.info(f"Strategy mode: {config.STRATEGY_MODE.value}")
     logger.info(f"Risk level: {config.RISK_LEVEL.value}")
+    logger.info(f"AI Brain: {'ENABLED' if ai_brain and ai_brain.is_available() else 'DISABLED'}")
     logger.info(f"Stop Loss: {config.DEFAULT_STOP_LOSS_PCT*100:.1f}% | Take Profit: {config.DEFAULT_TAKE_PROFIT_PCT*100:.1f}%")
     logger.info(f"Check interval: {config.CHECK_INTERVAL_SECONDS}s")
     logger.info("-" * 60)
@@ -223,12 +232,47 @@ def run_bot():
                 confidence = result.confidence
                 signal_reason = result.reason
 
-                logger.info(f"Signal: {trading_signal.value} (Confidence: {confidence:.1%})")
+                logger.info(f"Technical Signal: {trading_signal.value} (Confidence: {confidence:.1%})")
                 logger.info(f"Reason: {signal_reason}")
 
-            # Log current price and indicators
+            # Calculate indicators
             df = calculate_all_indicators(klines)
             current = df.iloc[-1]
+
+            # AI Analysis - enhance decision with Claude
+            ai_recommendation = None
+            if ai_brain and ai_brain.is_available() and config.ENABLE_AI:
+                logger.info("Consulting AI Brain...")
+
+                ai_decision = ai_brain.get_trade_decision(
+                    config.SYMBOL, df, current_price,
+                    trading_signal.value, confidence,
+                    current_position is not None
+                )
+
+                if ai_decision.get('ai_enhanced'):
+                    ai_action = ai_decision.get('action', 'HOLD')
+                    ai_confidence = ai_decision.get('confidence', 0.5)
+                    ai_reasoning = ai_decision.get('reasoning', '')
+
+                    logger.info(f"AI Decision: {ai_action} (Confidence: {ai_confidence:.1%})")
+                    logger.info(f"AI Reasoning: {ai_reasoning}")
+
+                    # AI can override technical signal if confidence is higher
+                    if ai_confidence > confidence and config.AI_CAN_OVERRIDE:
+                        logger.info(f"AI overriding technical signal: {trading_signal.value} -> {ai_action}")
+                        if ai_action == 'BUY':
+                            trading_signal = Signal.BUY
+                        elif ai_action == 'SELL':
+                            trading_signal = Signal.SELL
+                        else:
+                            trading_signal = Signal.HOLD
+                        confidence = ai_confidence
+                        signal_reason = f"AI: {ai_reasoning}"
+
+                    ai_recommendation = ai_decision
+
+            # Log current price and indicators
             logger.info(
                 f"Price: ${current_price:,.2f} | "
                 f"RSI: {current['rsi']:.1f} | "
@@ -457,10 +501,106 @@ def show_analytics():
     print(analyzer.generate_report(config.INITIAL_BALANCE_USDT))
 
 
+def run_ai_chat():
+    """Interactive chat with AI trading assistant."""
+    print("""
+╔════════════════════════════════════════════════════════════════════╗
+║              AI TRADING ASSISTANT - CHAT MODE                      ║
+║                                                                    ║
+║  Ask me anything about:                                            ║
+║  - Market analysis and conditions                                  ║
+║  - Trading strategies                                              ║
+║  - Technical indicators                                            ║
+║  - Risk management                                                 ║
+║                                                                    ║
+║  Commands: 'quit' to exit, 'analyze' for live market analysis     ║
+╚════════════════════════════════════════════════════════════════════╝
+    """)
+
+    assistant = AITradingAssistant()
+
+    if not assistant.brain.is_available():
+        print("Error: AI is not available. Please set ANTHROPIC_API_KEY environment variable.")
+        print("Example: export ANTHROPIC_API_KEY='your-api-key-here'")
+        return
+
+    print("AI Assistant ready! Type your questions...\n")
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+
+            if not user_input:
+                continue
+
+            if user_input.lower() == 'quit':
+                print("Goodbye!")
+                break
+
+            if user_input.lower() == 'analyze':
+                print("\nFetching live market data...")
+                try:
+                    klines = get_klines(config.SYMBOL, "1m", 100)
+                    current_price = get_current_price(config.SYMBOL)
+                    df = calculate_all_indicators(klines)
+
+                    # Get AI analysis
+                    analysis = assistant.brain.analyze_market(
+                        config.SYMBOL, df, current_price
+                    )
+
+                    if analysis:
+                        print(f"\n{'='*60}")
+                        print(f"AI Analysis for {config.SYMBOL}")
+                        print(f"{'='*60}")
+                        print(f"Price: ${current_price:,.2f}")
+                        print(f"Sentiment: {analysis.sentiment.value.upper()}")
+                        print(f"Confidence: {analysis.confidence:.1%}")
+                        print(f"\nSummary: {analysis.summary}")
+                        print(f"\nKey Factors:")
+                        for factor in analysis.key_factors:
+                            print(f"  - {factor}")
+                        print(f"\nRecommendation: {analysis.recommendation}")
+                        print(f"Risk: {analysis.risk_assessment}")
+                        print(f"{'='*60}\n")
+                    else:
+                        print("Could not get AI analysis")
+                except Exception as e:
+                    print(f"Error analyzing market: {e}")
+                continue
+
+            # Regular chat
+            context = None
+            try:
+                # Try to get current market context
+                klines = get_klines(config.SYMBOL, "1m", 50)
+                current_price = get_current_price(config.SYMBOL)
+                df = calculate_all_indicators(klines)
+                current = df.iloc[-1]
+                context = {
+                    'symbol': config.SYMBOL,
+                    'price': current_price,
+                    'rsi': round(current['rsi'], 1),
+                    'macd': round(current['macd'], 2)
+                }
+            except:
+                pass
+
+            response = assistant.chat(user_input, context)
+            print(f"\nAI: {response}\n")
+
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Crypto Paper Trading Bot")
+    parser = argparse.ArgumentParser(description="Crypto Paper Trading Bot with AI")
     parser.add_argument('--backtest', action='store_true', help='Run backtest')
     parser.add_argument('--analyze', action='store_true', help='Show analytics')
+    parser.add_argument('--chat', action='store_true', help='Chat with AI assistant')
 
     args = parser.parse_args()
 
@@ -468,6 +608,8 @@ def main():
         run_backtest()
     elif args.analyze:
         show_analytics()
+    elif args.chat:
+        run_ai_chat()
     else:
         run_bot()
 

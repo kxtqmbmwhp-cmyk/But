@@ -133,6 +133,27 @@ BINANCE_API_URL = "https://api.binance.com/api/v3"
 
 
 # =============================================================================
+# AI BRAIN SETTINGS (Claude API)
+# =============================================================================
+ENABLE_AI = True  # Enable AI-powered analysis
+
+# Set your API key via environment variable:
+# export ANTHROPIC_API_KEY="your-api-key-here"
+
+# AI Model (claude-sonnet-4-20250514 recommended for speed/cost balance)
+AI_MODEL = "claude-sonnet-4-20250514"
+
+# Allow AI to override technical signals when it has higher confidence
+AI_CAN_OVERRIDE = True
+
+# Minimum AI confidence to consider its recommendation
+AI_MIN_CONFIDENCE = 0.6
+
+# How often to consult AI (every N iterations, to save API costs)
+AI_ANALYSIS_FREQUENCY = 1  # 1 = every iteration, 5 = every 5th iteration
+
+
+# =============================================================================
 # NOTIFICATIONS
 # =============================================================================
 ENABLE_NOTIFICATIONS = True
